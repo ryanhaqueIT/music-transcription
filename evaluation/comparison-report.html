@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>MusicXML Comparison</title>
+<style>
+  body { font-family: sans-serif; margin: 2em; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: 6px 12px; text-align: left; }
+  th { background: #f0f0f0; }
+  tr.match td { background: #e6ffe6; }
+  tr.diff td { background: #ffe6e6; }
+  tr.partial td { background: #fff8e6; }
+</style>
+</head>
+<body>
+<h1>MusicXML Comparison Report</h1>
+<p><strong>A:</strong> Merged Pages<br/><strong>B:</strong> Full File</p>
+<table>
+  <tr><th>Metric</th><th>Merged Pages</th><th>Full File</th><th>Status</th></tr>
+    <tr class="match"><td>num_parts</td><td>1</td><td>1</td><td>MATCH</td></tr>
+    <tr class="match"><td>num_measures</td><td>413</td><td>413</td><td>MATCH</td></tr>
+    <tr class="match"><td>num_notes</td><td>1951</td><td>1951</td><td>MATCH</td></tr>
+    <tr class="diff"><td>num_rests</td><td>262</td><td>280</td><td>DIFF (+18)</td></tr>
+    <tr class="diff"><td>total_duration_ql</td><td>1567.25</td><td>1569.75</td><td>DIFF (+2.5)</td></tr>
+    <tr class="match"><td>key_signatures</td><td><music21.key.KeySignature of 1 sharp>, <music21.key.KeySignature of 1 sharp>, <music21.key.KeySignature of 1 sharp>, <music21.key.KeySignature of no sharps or flats>, <music21.key.KeySignature of 3 flats>, <music21.key.KeySignature of no sharps or flats>, <music21.key.KeySignature of 2 flats>, <music21.key.KeySignature of no sharps or flats>, <music21.key.KeySignature of 1 sharp>, <music21.key.KeySignature of 2 sharps>, <music21.key.KeySignature of 1 sharp>, <music21.key.KeySignature of 1 sharp></td><td><music21.key.KeySignature of 1 sharp>, <music21.key.KeySignature of 1 sharp>, <music21.key.KeySignature of 1 sharp>, <music21.key.KeySignature of no sharps or flats>, <music21.key.KeySignature of 3 flats>, <music21.key.KeySignature of no sharps or flats>, <music21.key.KeySignature of 2 flats>, <music21.key.KeySignature of no sharps or flats>, <music21.key.KeySignature of 1 sharp>, <music21.key.KeySignature of 2 sharps>, <music21.key.KeySignature of 1 sharp>, <music21.key.KeySignature of 1 sharp></td><td>MATCH</td></tr>
+    <tr class="match"><td>time_signatures</td><td><music21.meter.TimeSignature 4/4>, <music21.meter.TimeSignature 8/8>, <music21.meter.TimeSignature 2/2>, <music21.meter.TimeSignature 4/4>, <music21.meter.TimeSignature 8/8>, <music21.meter.TimeSignature 4/4>, <music21.meter.TimeSignature 2/2>, <music21.meter.TimeSignature 4/4></td><td><music21.meter.TimeSignature 4/4>, <music21.meter.TimeSignature 8/8>, <music21.meter.TimeSignature 2/2>, <music21.meter.TimeSignature 4/4>, <music21.meter.TimeSignature 8/8>, <music21.meter.TimeSignature 4/4>, <music21.meter.TimeSignature 2/2>, <music21.meter.TimeSignature 4/4></td><td>MATCH</td></tr>
+    <tr class="match"><td>clefs</td><td><music21.clef.AltoClef>, <music21.clef.AltoClef>, <music21.clef.AltoClef>, <music21.clef.TenorClef>, <music21.clef.AltoClef>, <music21.clef.AltoClef>, <music21.clef.AltoClef></td><td><music21.clef.AltoClef>, <music21.clef.AltoClef>, <music21.clef.AltoClef>, <music21.clef.TenorClef>, <music21.clef.AltoClef>, <music21.clef.AltoClef>, <music21.clef.AltoClef></td><td>MATCH</td></tr>
+    <tr class="match"><td>pitch_distribution</td><td colspan="2">(see detail)</td><td>100.0%</td></tr>
+    <tr class="match"><td>pitch_class_distribution</td><td colspan="2">(see detail)</td><td>100.0%</td></tr>
+    <tr class="match"><td>duration_distribution</td><td colspan="2">(see detail)</td><td>99.19%</td></tr>
+</table>
+</body>
+</html>

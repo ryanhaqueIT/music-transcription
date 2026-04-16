@@ -1,0 +1,7 @@
+music21>=9.1.0
+lxml>=4.9.0
+requests>=2.31.0
+openai>=1.30.0
+anthropic>=0.49.0
+pymupdf>=1.24.0
+Pillow>=10.0.0

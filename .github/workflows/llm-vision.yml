@@ -1,0 +1,133 @@
+name: LLM Vision OMR
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: 'API provider'
+        required: true
+        default: 'openrouter'
+        type: choice
+        options:
+          - openrouter
+          - anthropic
+      model:
+        description: 'Model ID (leave blank for default)'
+        required: false
+        default: ''
+        type: string
+      dpi:
+        description: 'PDF rendering DPI'
+        required: false
+        default: '200'
+        type: string
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install openai anthropic pymupdf Pillow music21 lxml
+
+      - name: Run LLM Vision conversion
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          MODEL_ARG=""
+          if [ -n "${{ inputs.model }}" ]; then
+            MODEL_ARG="--model ${{ inputs.model }}"
+          fi
+          python tools/llm-vision/convert.py \
+            --provider ${{ inputs.provider }} \
+            $MODEL_ARG \
+            --dpi ${{ inputs.dpi }} \
+            --verbose
+
+      - name: Validate output
+        run: |
+          python tools/llm-vision/validate.py \
+            --file results/llm-vision/output.musicxml \
+            --reference reference-outputs/homr-full-output.musicxml \
+            --output-json results/llm-vision/validation.json
+        continue-on-error: true
+
+      - name: Run evaluation
+        run: |
+          python evaluation/compare.py \
+            results/llm-vision/output.musicxml \
+            reference-outputs/homr-full-output.musicxml \
+            --output results/llm-vision/comparison-report.html
+        continue-on-error: true
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: llm-vision-results-${{ inputs.provider }}
+          path: |
+            results/llm-vision/
+          retention-days: 30
+
+  # Run multiple open-source models in parallel for comparison
+  multi-model:
+    if: inputs.provider == 'openrouter' && inputs.model == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - qwen/qwen2.5-vl-72b-instruct
+          - google/gemini-2.5-flash-preview
+          - meta-llama/llama-3.2-90b-vision-instruct
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install openai pymupdf Pillow music21 lxml
+
+      - name: Run conversion - ${{ matrix.model }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          SAFE_NAME=$(echo "${{ matrix.model }}" | tr '/' '-')
+          python tools/llm-vision/convert.py \
+            --provider openrouter \
+            --model "${{ matrix.model }}" \
+            --output-dir "results/llm-vision/${SAFE_NAME}" \
+            --verbose
+
+      - name: Validate output
+        run: |
+          SAFE_NAME=$(echo "${{ matrix.model }}" | tr '/' '-')
+          python tools/llm-vision/validate.py \
+            --file "results/llm-vision/${SAFE_NAME}/output.musicxml" \
+            --reference reference-outputs/homr-full-output.musicxml
+        continue-on-error: true
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: llm-vision-${{ strategy.job-index }}
+          path: results/llm-vision/
+          retention-days: 30

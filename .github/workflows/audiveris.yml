@@ -1,0 +1,166 @@
+name: Audiveris OMR Conversion
+
+on:
+  push:
+    paths:
+      - 'tools/audiveris/**'
+      - 'test-scores/**'
+      - '.github/workflows/audiveris.yml'
+  pull_request:
+    paths:
+      - 'tools/audiveris/**'
+      - 'test-scores/**'
+  workflow_dispatch:        # Allow manual trigger
+
+jobs:
+  convert:
+    name: Run Audiveris OMR
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      # ------------------------------------------------------------------
+      # 1. Checkout
+      # ------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # 2. Set up Java 17 (required by Audiveris)
+      # ------------------------------------------------------------------
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ------------------------------------------------------------------
+      # 3. Set up Python (for the wrapper script)
+      # ------------------------------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # ------------------------------------------------------------------
+      # 4. Install Audiveris from .deb release
+      # ------------------------------------------------------------------
+      - name: Cache Audiveris .deb
+        uses: actions/cache@v4
+        id: cache-audiveris
+        with:
+          path: /tmp/audiveris.deb
+          key: audiveris-5.10.2-ubuntu22.04
+
+      - name: Download Audiveris
+        if: steps.cache-audiveris.outputs.cache-hit != 'true'
+        run: |
+          curl -L -o /tmp/audiveris.deb \
+            https://github.com/Audiveris/audiveris/releases/download/5.10.2/Audiveris-5.10.2-ubuntu22.04-x86_64.deb
+
+      - name: Install Audiveris
+        run: |
+          sudo dpkg -i /tmp/audiveris.deb || sudo apt-get install -f -y
+          # Verify
+          audiveris -version || /opt/audiveris/bin/Audiveris -version || echo "Checking install paths..."
+          # Find the actual binary
+          find /opt /usr -name "Audiveris" -o -name "audiveris" 2>/dev/null | head -10 || true
+
+      # ------------------------------------------------------------------
+      # 5. Install Tesseract language data
+      # ------------------------------------------------------------------
+      - name: Install Tesseract English data
+        run: |
+          # Audiveris bundles Tesseract but needs traineddata
+          TESSDATA_DIR="$HOME/.config/AudiverisLtd/audiveris/config/tessdata"
+          mkdir -p "$TESSDATA_DIR"
+          if [ ! -f "$TESSDATA_DIR/eng.traineddata" ]; then
+            curl -L -o "$TESSDATA_DIR/eng.traineddata" \
+              https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata
+          fi
+          echo "Tesseract data installed at: $TESSDATA_DIR"
+          ls -la "$TESSDATA_DIR/"
+
+      # ------------------------------------------------------------------
+      # 6. Run conversion on test PDF
+      # ------------------------------------------------------------------
+      - name: Run Audiveris conversion
+        id: convert
+        run: |
+          mkdir -p results/audiveris
+
+          # Find the Audiveris executable
+          AUDIVERIS_BIN=""
+          for candidate in \
+            "/opt/audiveris/bin/Audiveris" \
+            "/opt/Audiveris/bin/Audiveris" \
+            "$(which audiveris 2>/dev/null)" \
+            "$(which Audiveris 2>/dev/null)"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              AUDIVERIS_BIN="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$AUDIVERIS_BIN" ]; then
+            echo "::warning::Audiveris binary not found in expected paths, searching..."
+            AUDIVERIS_BIN=$(find /opt /usr -name "Audiveris" -type f 2>/dev/null | head -1)
+          fi
+
+          if [ -z "$AUDIVERIS_BIN" ]; then
+            echo "::error::Audiveris not found. Falling back to Docker."
+            echo "use_docker=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found Audiveris at: $AUDIVERIS_BIN"
+            export AUDIVERIS_EXE="$AUDIVERIS_BIN"
+
+            # Run conversion with timeout
+            timeout 600 python tools/audiveris/convert.py \
+              test-scores/mozart-eine-kleine-viola.pdf \
+              --output-dir results/audiveris \
+              --json > results/audiveris/ci-result.json 2>&1 || true
+
+            echo "use_docker=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ------------------------------------------------------------------
+      # 6b. Docker fallback if native install failed
+      # ------------------------------------------------------------------
+      - name: Docker fallback conversion
+        if: steps.convert.outputs.use_docker == 'true'
+        run: |
+          docker pull nirmata1/audiforge:latest
+          python tools/audiveris/convert.py \
+            test-scores/mozart-eine-kleine-viola.pdf \
+            --output-dir results/audiveris \
+            --docker \
+            --json > results/audiveris/ci-result.json 2>&1 || true
+
+      # ------------------------------------------------------------------
+      # 7. List results
+      # ------------------------------------------------------------------
+      - name: Show results
+        if: always()
+        run: |
+          echo "=== Results directory ==="
+          ls -la results/audiveris/ || echo "No results"
+          echo ""
+          echo "=== Conversion metadata ==="
+          cat results/audiveris/*-meta.json 2>/dev/null || echo "No metadata"
+          echo ""
+          echo "=== MXL files ==="
+          find results/audiveris -name "*.mxl" -ls 2>/dev/null || echo "No MXL files"
+
+      # ------------------------------------------------------------------
+      # 8. Upload artifacts
+      # ------------------------------------------------------------------
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audiveris-results
+          path: |
+            results/audiveris/*.mxl
+            results/audiveris/*-meta.json
+            results/audiveris/*-convert*.log
+          retention-days: 30

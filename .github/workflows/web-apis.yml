@@ -1,0 +1,142 @@
+name: Web API Conversion Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to test (soundslice, flat, klangio, or all)"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - soundslice
+          - flat
+          - klangio
+      pdf_path:
+        description: "Path to PDF file (relative to repo root)"
+        required: false
+        default: "test-scores/mozart-eine-kleine-viola.pdf"
+      soundslice_slug:
+        description: "(soundslice) Export from existing slice by scorehash"
+        required: false
+      flat_score_id:
+        description: "(flat) Export from existing score by ID"
+        required: false
+
+env:
+  SOUNDSLICE_APP_ID: ${{ secrets.SOUNDSLICE_APP_ID }}
+  SOUNDSLICE_PASSWORD: ${{ secrets.SOUNDSLICE_PASSWORD }}
+  FLAT_ACCESS_TOKEN: ${{ secrets.FLAT_ACCESS_TOKEN }}
+  KLANGIO_API_KEY: ${{ secrets.KLANGIO_API_KEY }}
+
+jobs:
+  convert-soundslice:
+    if: ${{ github.event.inputs.service == 'all' || github.event.inputs.service == 'soundslice' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Check credentials
+        run: |
+          if [ -z "$SOUNDSLICE_APP_ID" ] || [ -z "$SOUNDSLICE_PASSWORD" ]; then
+            echo "::warning::SOUNDSLICE_APP_ID and/or SOUNDSLICE_PASSWORD not set. Skipping."
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run Soundslice conversion
+        if: env.SKIP != 'true'
+        run: |
+          ARGS="${{ github.event.inputs.pdf_path }} soundslice"
+          if [ -n "${{ github.event.inputs.soundslice_slug }}" ]; then
+            ARGS="$ARGS --slug ${{ github.event.inputs.soundslice_slug }}"
+          fi
+          python tools/web-apis/convert.py $ARGS
+
+      - name: Upload results
+        if: env.SKIP != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: soundslice-results
+          path: results/web-apis/soundslice/
+          if-no-files-found: warn
+
+  convert-flat:
+    if: ${{ github.event.inputs.service == 'all' || github.event.inputs.service == 'flat' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Check credentials
+        run: |
+          if [ -z "$FLAT_ACCESS_TOKEN" ]; then
+            echo "::warning::FLAT_ACCESS_TOKEN not set. Skipping."
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run Flat.io conversion
+        if: env.SKIP != 'true'
+        run: |
+          ARGS="${{ github.event.inputs.pdf_path }} flat"
+          if [ -n "${{ github.event.inputs.flat_score_id }}" ]; then
+            ARGS="$ARGS --score-id ${{ github.event.inputs.flat_score_id }}"
+          fi
+          python tools/web-apis/convert.py $ARGS
+
+      - name: Upload results
+        if: env.SKIP != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flat-results
+          path: results/web-apis/flat-io/
+          if-no-files-found: warn
+
+  convert-klangio:
+    if: ${{ github.event.inputs.service == 'all' || github.event.inputs.service == 'klangio' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Check credentials
+        run: |
+          if [ -z "$KLANGIO_API_KEY" ]; then
+            echo "::warning::KLANGIO_API_KEY not set. Skipping."
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run Klangio conversion
+        if: env.SKIP != 'true'
+        run: |
+          python tools/web-apis/convert.py ${{ github.event.inputs.pdf_path }} klangio
+
+      - name: Upload results
+        if: env.SKIP != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: klangio-results
+          path: results/web-apis/klangio/
+          if-no-files-found: warn
