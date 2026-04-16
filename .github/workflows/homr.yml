@@ -38,11 +38,11 @@ jobs:
       - name: Run HOMR conversion (CPU mode)
         run: |
           python tools/homr/convert.py \
-            --pdf test-scores/mozart-eine-kleine-viola.pdf \
+            test-scores/mozart-eine-kleine-viola.pdf \
             --output-dir results/homr \
             --dpi 300 \
             --merge \
-            --verbose
+            --debug
         timeout-minutes: 45
 
       - name: Validate output

@@ -38,10 +38,9 @@ jobs:
       - name: Run oemer conversion (CPU mode)
         run: |
           python tools/oemer/convert.py \
-            --pdf test-scores/mozart-eine-kleine-viola.pdf \
+            test-scores/mozart-eine-kleine-viola.pdf \
             --output-dir results/oemer \
-            --merge \
-            --verbose
+            --merge
         timeout-minutes: 45
 
       - name: Validate output
