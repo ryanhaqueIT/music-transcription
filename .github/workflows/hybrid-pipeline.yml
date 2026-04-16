@@ -1,0 +1,140 @@
+name: Hybrid Pipeline (Audiveris + LLM)
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'OpenRouter model for LLM correction'
+        required: false
+        default: 'qwen/qwen2.5-vl-72b-instruct'
+        type: string
+      skip_llm:
+        description: 'Skip LLM step (Audiveris only)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  hybrid:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install openai pymupdf Pillow lxml music21
+
+      - name: Install Audiveris (page-by-page mode)
+        run: |
+          # Download and force-install (ignore desktop menu errors)
+          curl -L -o /tmp/audiveris.deb \
+            https://github.com/Audiveris/audiveris/releases/download/5.10.2/Audiveris-5.10.2-ubuntu22.04-x86_64.deb
+          sudo dpkg -i --force-all /tmp/audiveris.deb 2>&1 || true
+
+          # Install Tesseract language data
+          TESSDATA_DIR="$HOME/.config/AudiverisLtd/audiveris/config/tessdata"
+          mkdir -p "$TESSDATA_DIR"
+          curl -L -o "$TESSDATA_DIR/eng.traineddata" \
+            https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata
+
+          # Find and export the executable path
+          AUDIVERIS_BIN=$(find /opt /usr -name "Audiveris" -type f 2>/dev/null | head -1)
+          if [ -n "$AUDIVERIS_BIN" ]; then
+            echo "AUDIVERIS_EXE=$AUDIVERIS_BIN" >> $GITHUB_ENV
+            echo "Found Audiveris at: $AUDIVERIS_BIN"
+          else
+            echo "WARNING: Audiveris binary not found, will use LLM-only mode"
+          fi
+
+      - name: Run hybrid pipeline
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          python tools/hybrid/pipeline.py \
+            test-scores/mozart-eine-kleine-viola.pdf \
+            --output-dir results/hybrid \
+            --model "${{ inputs.model }}" \
+            ${{ inputs.skip_llm == 'true' && '--skip-llm' || '' }} \
+            --debug
+
+      - name: Show results
+        if: always()
+        run: |
+          echo "=== Pipeline Results ==="
+          cat results/hybrid/pipeline_results.json 2>/dev/null || echo "No results"
+          echo ""
+          echo "=== Output files ==="
+          find results/hybrid -name "*.musicxml" -ls 2>/dev/null
+          echo ""
+          echo "=== Draft vs Final ==="
+          wc -l results/hybrid/draft.musicxml results/hybrid/output.musicxml 2>/dev/null || true
+
+      - name: Validate output
+        if: always()
+        run: |
+          if [ -f results/hybrid/output.musicxml ]; then
+            python evaluation/validate.py results/hybrid/output.musicxml || true
+          fi
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hybrid-pipeline-results
+          path: results/hybrid/
+          retention-days: 30
+
+  # Also run LLM-only (no Audiveris) for comparison
+  llm-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install openai pymupdf Pillow lxml music21
+
+      - name: Run LLM-only transcription
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          python tools/llm-vision/convert.py \
+            --provider openrouter \
+            --model "${{ inputs.model || 'qwen/qwen2.5-vl-72b-instruct' }}" \
+            --output-dir results/llm-only \
+            --verbose
+
+      - name: Validate output
+        if: always()
+        run: |
+          if [ -f results/llm-only/output.musicxml ]; then
+            python evaluation/validate.py results/llm-only/output.musicxml || true
+          fi
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: llm-only-results
+          path: results/llm-only/
+          retention-days: 30
