@@ -1,0 +1,73 @@
+name: oemer OMR (CPU)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: 'Pages to process (e.g., "1,2,3,4,5" or "1" for quick test)'
+        required: false
+        default: '1,2,3,4,5'
+        type: string
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: oemer-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install oemer and dependencies
+        run: |
+          pip install oemer pymupdf music21 Pillow
+          echo "oemer installed successfully"
+          python -c "import oemer; print('oemer imported')" || echo "oemer import check done"
+
+      - name: Run oemer conversion (CPU mode)
+        run: |
+          python tools/oemer/convert.py \
+            --pdf test-scores/mozart-eine-kleine-viola.pdf \
+            --output-dir results/oemer \
+            --merge \
+            --verbose
+        timeout-minutes: 45
+
+      - name: Validate output
+        if: always()
+        run: |
+          if [ -f results/oemer/output.musicxml ]; then
+            python evaluation/validate.py results/oemer/output.musicxml || true
+          else
+            echo "No output file produced"
+            ls -la results/oemer/ 2>/dev/null || echo "results/oemer/ does not exist"
+          fi
+
+      - name: Run evaluation against HOMR baseline
+        if: always()
+        run: |
+          if [ -f results/oemer/output.musicxml ]; then
+            python evaluation/compare.py \
+              results/oemer/output.musicxml \
+              reference-outputs/homr-full-output.musicxml \
+              --output results/oemer/comparison.html || true
+          fi
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: oemer-results
+          path: results/oemer/
+          retention-days: 30

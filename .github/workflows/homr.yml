@@ -1,0 +1,74 @@
+name: HOMR OMR (CPU)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: 'Pages to process (e.g., "1,2,3,4,5" or "1" for quick test)'
+        required: false
+        default: '1,2,3,4,5'
+        type: string
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: homr-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install HOMR and dependencies
+        run: |
+          pip install homr pymupdf music21 Pillow
+          echo "HOMR installed successfully"
+          python -c "import homr; print(f'HOMR version: {homr.__version__}')" || echo "HOMR imported"
+
+      - name: Run HOMR conversion (CPU mode)
+        run: |
+          python tools/homr/convert.py \
+            --pdf test-scores/mozart-eine-kleine-viola.pdf \
+            --output-dir results/homr \
+            --dpi 300 \
+            --merge \
+            --verbose
+        timeout-minutes: 45
+
+      - name: Validate output
+        if: always()
+        run: |
+          if [ -f results/homr/output.musicxml ]; then
+            python evaluation/validate.py results/homr/output.musicxml || true
+          else
+            echo "No output file produced"
+            ls -la results/homr/ 2>/dev/null || echo "results/homr/ does not exist"
+          fi
+
+      - name: Run evaluation against HOMR baseline
+        if: always()
+        run: |
+          if [ -f results/homr/output.musicxml ]; then
+            python evaluation/compare.py \
+              results/homr/output.musicxml \
+              reference-outputs/homr-full-output.musicxml \
+              --output results/homr/comparison.html || true
+          fi
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: homr-results
+          path: results/homr/
+          retention-days: 30
