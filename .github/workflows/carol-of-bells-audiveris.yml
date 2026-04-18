@@ -1,7 +1,10 @@
-name: Carol of Bells - Audiveris Only
+name: Carol of Bells Audiveris
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'test-scores/carol-of-the-bells-viola.pdf'
 
 jobs:
   audiveris:
@@ -15,42 +18,32 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install Audiveris
         run: |
-          curl -L -o /tmp/audiveris.deb \
-            https://github.com/Audiveris/audiveris/releases/download/5.10.2/Audiveris-5.10.2-ubuntu22.04-x86_64.deb
-          sudo dpkg -i --force-all /tmp/audiveris.deb 2>&1 || true
-          sudo apt-get install -f -y 2>&1 || true
-
+          curl -L -o /tmp/audiveris.deb https://github.com/Audiveris/audiveris/releases/download/5.10.2/Audiveris-5.10.2-ubuntu22.04-x86_64.deb
+          sudo dpkg -i --force-all /tmp/audiveris.deb || true
+          sudo apt-get install -f -y || true
           TESSDATA_DIR="$HOME/.config/AudiverisLtd/audiveris/config/tessdata"
           mkdir -p "$TESSDATA_DIR"
-          curl -L -o "$TESSDATA_DIR/eng.traineddata" \
-            https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata
+          curl -L -o "$TESSDATA_DIR/eng.traineddata" https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata
 
-      - name: Run Audiveris on Carol of the Bells
+      - name: Run Audiveris
         run: |
           mkdir -p results/carol-of-bells
           AUDIVERIS=$(find /opt -name "Audiveris" -type f 2>/dev/null | head -1)
           echo "Using: $AUDIVERIS"
-          $AUDIVERIS -batch -export -output results/carol-of-bells -- test-scores/carol-of-the-bells-viola.pdf 2>&1 | tail -50
+          $AUDIVERIS -batch -export -output results/carol-of-bells -- test-scores/carol-of-the-bells-viola.pdf || true
+          ls -la results/carol-of-bells/
 
-      - name: Extract MusicXML from .mxl
-        run: |
-          cd results/carol-of-bells
-          for f in *.mxl; do
-            python3 -c "
-import zipfile, sys
-with zipfile.ZipFile('$f', 'r') as z:
-    for n in z.namelist():
-        if n.endswith('.xml') and not n.startswith('META-INF'):
-            with open(n, 'wb') as out:
-                out.write(z.read(n))
-            print(f'Extracted: {n}')
-"
-          done
-          ls -la
+      - name: Extract MusicXML
+        run: python3 tools/hybrid/extract_mxl.py results/carol-of-bells
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: carol-of-bells-audiveris
           path: results/carol-of-bells/
